@@ -1,0 +1,1594 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>카메라 마스터: ISO & 셔터스피드</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;600;700;800&display=swap');
+        
+        * {
+            font-family: 'Pretendard', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            user-select: none;
+        }
+
+        .glass-panel {
+            background: rgba(18, 24, 38, 0.88);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+
+        .viewfinder-grid {
+            background-size: 33.333% 33.333%;
+            background-image: 
+                linear-gradient(to right, rgba(255, 255, 255, 0.15) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255, 255, 255, 0.15) 1px, transparent 1px);
+        }
+
+        .shutter-btn:active {
+            transform: scale(0.95);
+            box-shadow: inset 0 3px 8px rgba(0,0,0,0.6);
+        }
+
+        @keyframes shutterFlash {
+            0% { opacity: 0; }
+            30% { opacity: 1; background: #ffffff; }
+            100% { opacity: 0; }
+        }
+
+        .shutter-flash-active {
+            animation: shutterFlash 0.35s ease-out forwards;
+        }
+
+        @keyframes slideInRight {
+            from { transform: translateX(120%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        .toast-slide-in {
+            animation: slideInRight 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+
+        @keyframes reticlePulse {
+            0%, 100% { border-color: rgba(34, 197, 94, 0.8); box-shadow: 0 0 10px rgba(34, 197, 94, 0.4); }
+            50% { border-color: rgba(34, 197, 94, 0.3); box-shadow: 0 0 2px rgba(34, 197, 94, 0.1); }
+        }
+
+        .reticle-glow {
+            animation: reticlePulse 1.8s infinite ease-in-out;
+        }
+
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(0,0,0,0.2);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.2);
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col justify-between overflow-x-hidden selection:bg-amber-500 selection:text-black">
+
+    <header class="w-full bg-slate-900/90 border-b border-slate-800 px-4 py-3 sticky top-0 z-40 backdrop-blur">
+        <div class="max-w-6xl mx-auto flex items-center justify-between">
+            <div class="flex items-center gap-3 cursor-pointer" onclick="goHome()">
+                <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-500 to-amber-300 flex items-center justify-center text-slate-950 font-black shadow-lg shadow-amber-500/20">
+                    <i class="fa-solid font-bold fa-camera text-lg"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-lg leading-none tracking-tight text-white">카메라 마스터</h1>
+                    <span class="text-xs text-amber-400 font-medium">ISO & 셔터스피드 실전 게임</span>
+                </div>
+            </div>
+
+            <!-- Top Header Stats (Lives & Round Indicator) -->
+            <div id="game-stats-header" class="hidden flex items-center gap-6">
+                <!-- Lives / Hearts -->
+                <div class="flex items-center gap-1.5 bg-slate-800/80 px-3.5 py-1.5 rounded-full border border-slate-700">
+                    <span class="text-xs text-slate-400 font-semibold mr-1">목숨:</span>
+                    <div id="hearts-container" class="flex gap-1 text-red-500 text-lg">
+                        <i class="fa-solid fa-heart transition-all duration-300"></i>
+                        <i class="fa-solid fa-heart transition-all duration-300"></i>
+                        <i class="fa-solid fa-heart transition-all duration-300"></i>
+                    </div>
+                </div>
+
+                <!-- Round Badge -->
+                <div class="flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 px-3.5 py-1.5 rounded-full">
+                    <span class="text-xs text-amber-300 font-bold uppercase tracking-wider" id="stage-badge">미션</span>
+                    <span class="text-xs text-slate-300 font-semibold" id="round-badge">ROUND 1/7</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-1 max-w-6xl w-full mx-auto p-4 flex flex-col justify-center relative my-auto">
+
+        <!-- Top Right Toast Feedback Container -->
+        <div id="toast-container" class="fixed top-20 right-4 z-50 max-w-sm w-full pointer-events-none flex flex-col gap-3"></div>
+
+        <!-- ==================== SCREEN 1: HOME START SCREEN ==================== -->
+        <section id="screen-home" class="flex flex-col items-center justify-center text-center py-10 my-auto">
+            <div class="relative mb-6">
+                <div class="absolute -inset-4 bg-gradient-to-r from-amber-500 to-amber-600 rounded-full blur-2xl opacity-25 animate-pulse"></div>
+                <div class="relative w-28 h-28 sm:w-36 sm:h-36 bg-gradient-to-tr from-slate-900 to-slate-800 border-2 border-amber-500/40 rounded-3xl flex items-center justify-center shadow-2xl">
+                    <i class="fa-solid fa-camera-retro text-5xl sm:text-6xl text-amber-400 drop-shadow-md"></i>
+                </div>
+            </div>
+
+            <h2 class="text-3xl sm:text-5xl font-black text-white tracking-tight mb-3">
+                카메라를 소개합니다
+            </h2>
+            <p class="text-slate-400 max-w-lg text-sm sm:text-base mb-8 leading-relaxed">
+                미국의 아름다운 풍경 속에서 셔터스피드와 ISO를 직접 조절하며<br class="hidden sm:inline">
+                총 7개 라운드의 완벽한 사진을 찍어보는 생생한 카메라 체감 게임!
+            </p>
+
+            <div class="flex flex-col sm:flex-row gap-4 w-full max-w-md">
+                <button onclick="onClickStartGameButton()" class="flex-1 py-4 px-6 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-extrabold text-lg rounded-2xl shadow-xl shadow-amber-500/20 transform transition active:scale-95 flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-play"></i> 게임 시작
+                </button>
+                <button onclick="openHowToPlayModal()" class="flex-1 py-4 px-6 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white font-bold text-lg rounded-2xl shadow-lg transform transition active:scale-95 flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-book-open text-amber-400"></i> 게임 방법
+                </button>
+            </div>
+        </section>
+
+        <!-- ==================== SCREEN 2: GAME VIEW / CAMERA SIMULATOR ==================== -->
+        <section id="screen-game" class="hidden flex-col gap-4 my-auto">
+            <!-- Round Target Card & Status -->
+            <div class="glass-panel rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 border border-amber-500/20 shadow-lg">
+                <div class="flex items-start gap-3">
+                    <div class="p-2.5 bg-amber-500/20 text-amber-400 rounded-xl mt-0.5">
+                        <i class="fa-solid fa-bullseye text-xl"></i>
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <span id="target-location-tag" class="text-xs font-extrabold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">미국 태평양 해안</span>
+                            <h3 id="target-title" class="font-extrabold text-lg text-white">속도감 있는 스포츠카 포착하기</h3>
+                        </div>
+                        <p id="target-description" class="text-slate-300 text-xs sm:text-sm mt-1">
+                            붉은 노을 속을 달리는 차를 잔상 없이 선명하게 포착하세요!
+                        </p>
+                    </div>
+                </div>
+
+                <!-- EV Meter (Exposure Value Balance Bar) -->
+                <div class="bg-slate-950/80 p-3 rounded-xl border border-slate-800 flex flex-col items-center justify-center min-w-[220px]">
+                    <div class="flex justify-between w-full text-[10px] text-slate-400 font-mono mb-1">
+                        <span>-3 (어둠)</span>
+                        <span class="text-amber-400 font-bold">0 EV (적정)</span>
+                        <span>+3 (밝음)</span>
+                    </div>
+                    <div class="w-full bg-slate-800 h-2.5 rounded-full relative overflow-hidden flex items-center">
+                        <div class="absolute left-1/2 top-0 bottom-0 w-0.5 bg-slate-500 z-10"></div>
+                        <div id="ev-indicator-bar" class="h-full bg-emerald-400 transition-all duration-200 rounded-full" style="width: 50%; margin-left: 0;"></div>
+                    </div>
+                    <span id="ev-value-text" class="text-xs font-mono font-bold text-emerald-400 mt-1">EV: ±0.0 (적정)</span>
+                </div>
+            </div>
+
+            <!-- Viewfinder Area & Control Panel -->
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
+                <!-- CAMERA VIEWFINDER -->
+                <div class="lg:col-span-8 bg-black rounded-2xl overflow-hidden relative border border-slate-800 shadow-2xl flex flex-col items-center justify-center min-h-[320px] sm:min-h-[420px]">
+                    <canvas id="viewfinder-canvas" class="w-full h-full object-cover"></canvas>
+                    <div class="absolute inset-0 viewfinder-grid pointer-events-none"></div>
+
+                    <!-- Reticle HUD -->
+                    <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <div class="w-24 h-24 sm:w-32 sm:h-32 border border-emerald-400/60 rounded-lg relative reticle-glow flex items-center justify-center">
+                            <div class="w-2 h-2 bg-emerald-400/80 rounded-full"></div>
+                        </div>
+                    </div>
+
+                    <div class="absolute top-3 left-3 bg-black/60 backdrop-blur px-3 py-1 rounded-md text-emerald-400 font-mono text-xs flex items-center gap-2 border border-emerald-500/30">
+                        <span class="w-2 h-2 rounded-full bg-red-500 animate-ping"></span>
+                        <span>LIVE PREVIEW</span>
+                    </div>
+
+                    <!-- Live HUD Settings Checklist -->
+                    <div class="absolute bottom-3 left-3 right-3 bg-black/80 backdrop-blur px-4 py-2.5 rounded-xl text-white font-mono text-xs flex flex-wrap justify-between items-center border border-white/10 gap-2">
+                        <div class="flex items-center gap-4">
+                            <span>ISO: <strong id="hud-iso" class="text-amber-400">400</strong></span>
+                            <span>셔터: <strong id="hud-ss" class="text-sky-400">1/500s</strong></span>
+                        </div>
+                        <div class="flex items-center gap-3 text-[11px]">
+                            <span id="check-ss-status" class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">셔터조건: ✅ 만족</span>
+                            <span id="check-ev-status" class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">밝기: ✅ 적정</span>
+                        </div>
+                    </div>
+
+                    <div id="shutter-flash" class="absolute inset-0 bg-white opacity-0 pointer-events-none z-30"></div>
+                </div>
+
+                <!-- CAMERA CONTROLS PANEL -->
+                <div class="lg:col-span-4 glass-panel rounded-2xl p-5 flex flex-col justify-between border border-slate-800 gap-6">
+                    <div>
+                        <h4 class="text-sm font-bold text-slate-300 uppercase tracking-wider mb-4 flex items-center justify-between border-b border-slate-800 pb-2">
+                            <span><i class="fa-solid fa-sliders text-amber-400 mr-2"></i>카메라 설정</span>
+                            <span class="text-[11px] text-amber-400 font-semibold">실시간 조정</span>
+                        </h4>
+
+                        <!-- 1. ISO CONTROL -->
+                        <div class="mb-6">
+                            <div class="flex justify-between items-center mb-2">
+                                <label class="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                                    <i class="fa-solid fa-sun"></i> ISO (빛 감도)
+                                </label>
+                                <span id="iso-value-display" class="font-mono text-sm font-extrabold text-amber-300 bg-amber-500/20 px-2.5 py-0.5 rounded border border-amber-500/30">
+                                    ISO 800
+                                </span>
+                            </div>
+                            <input type="range" id="iso-slider" min="0" max="7" step="1" value="3" 
+                                   class="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-400" 
+                                   oninput="updateCameraSettings()">
+                            <div class="flex justify-between text-[10px] font-mono text-slate-500 mt-1">
+                                <span>100 (어두움/낮음)</span>
+                                <span>12800 (밝음/높음)</span>
+                            </div>
+                        </div>
+
+                        <!-- 2. SHUTTER SPEED CONTROL -->
+                        <div class="mb-4">
+                            <div class="flex justify-between items-center mb-2">
+                                <label class="text-xs font-bold text-sky-400 flex items-center gap-1.5">
+                                    <i class="fa-solid fa-stopwatch"></i> 셔터스피드 (속도)
+                                </label>
+                                <span id="ss-value-display" class="font-mono text-sm font-extrabold text-sky-300 bg-sky-500/20 px-2.5 py-0.5 rounded border border-sky-500/30">
+                                    1/500초
+                                </span>
+                            </div>
+                            <input type="range" id="ss-slider" min="0" max="11" step="1" value="8" 
+                                   class="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-sky-400" 
+                                   oninput="updateCameraSettings()">
+                            <div class="flex justify-between text-[10px] font-mono text-slate-500 mt-1">
+                                <span>2초 (느림/밝음)</span>
+                                <span>1/4000초 (빠름/어두움)</span>
+                            </div>
+                        </div>
+
+                        <!-- Real-time Actionable Tip Box -->
+                        <div id="live-guide-tip" class="p-3 rounded-xl bg-slate-900/90 border border-slate-800 text-xs text-slate-300 leading-relaxed">
+                            💡 <strong>조작 팁:</strong> 셔터스피드를 올리면 화면이 어두워집니다. ISO를 함께 올려 EV를 0으로 맞추세요!
+                        </div>
+                    </div>
+
+                    <!-- SHUTTER CAPTURE BUTTON -->
+                    <button onclick="takePhoto()" class="shutter-btn w-full py-4 bg-gradient-to-r from-red-600 via-amber-500 to-red-600 hover:from-red-500 hover:to-red-500 text-slate-950 font-black text-xl rounded-2xl shadow-xl shadow-red-900/30 transition duration-150 flex items-center justify-center gap-3">
+                        <div class="w-6 h-6 rounded-full border-2 border-slate-950 flex items-center justify-center">
+                            <div class="w-3 h-3 rounded-full bg-slate-950"></div>
+                        </div>
+                        <span>사진 촬영하기</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== SUCCESS CELEBRATION MODAL ==================== -->
+        <div id="modal-success-result" class="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md hidden flex items-center justify-center p-4">
+            <div class="bg-slate-900 border border-emerald-500/40 max-w-lg w-full rounded-3xl p-6 shadow-2xl flex flex-col gap-4 text-center">
+                <div class="w-16 h-16 rounded-2xl bg-emerald-500/20 text-emerald-400 text-3xl flex items-center justify-center mx-auto border border-emerald-500/30">
+                    <i class="fa-solid fa-circle-check"></i>
+                </div>
+                <h3 class="text-2xl font-black text-white">완벽한 촬영 성공!</h3>
+                <p id="success-modal-msg" class="text-slate-300 text-sm leading-relaxed bg-slate-950 p-4 rounded-2xl border border-slate-800 text-left">
+                    선명한 피사체와 완벽한 적정 노출로 촬영되었습니다!
+                </p>
+                <button onclick="advanceNextRound()" class="w-full py-3.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-extrabold text-base rounded-2xl shadow-xl transition">
+                    다음 라운드로 이동 <i class="fa-solid fa-arrow-right ml-1"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- ==================== SCREEN 3: GAME OVER / CLEAR SCREEN ==================== -->
+        <section id="screen-end" class="hidden flex-col items-center justify-center text-center py-10 my-auto">
+            <div id="end-icon-box" class="w-24 h-24 rounded-3xl bg-slate-900 border border-slate-800 flex items-center justify-center text-5xl mb-6 shadow-2xl">
+                <i class="fa-solid fa-trophy text-amber-400"></i>
+            </div>
+
+            <h2 id="end-title" class="text-3xl sm:text-4xl font-extrabold text-white mb-2">
+                축하합니다! 카메라 마스터 달성!
+            </h2>
+            <p id="end-message" class="text-slate-300 max-w-md text-sm sm:text-base mb-8 leading-relaxed">
+                총 7개 라운드의 모든 출사를 성공적으로 클리어하였습니다!
+            </p>
+
+            <div class="flex gap-4">
+                <button onclick="goHome()" class="px-8 py-3.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-lg rounded-2xl shadow-xl transition">
+                    처음으로 돌아가기
+                </button>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- HOW TO PLAY MODAL -->
+    <div id="modal-how-to-play" class="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md hidden flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-800 max-w-xl w-full rounded-3xl p-6 shadow-2xl flex flex-col gap-5 max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+                <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                    <i class="fa-solid fa-book-open text-amber-400"></i> 카메라 게임 가이드
+                </h3>
+                <button onclick="closeHowToPlayModal()" class="text-slate-400 hover:text-white text-2xl font-bold">&times;</button>
+            </div>
+
+            <div class="space-y-4 text-sm text-slate-300">
+                <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800">
+                    <h4 class="font-bold text-amber-400 mb-1"><i class="fa-solid fa-sun mr-1"></i> ISO (밝기 조절)</h4>
+                    <p class="text-xs text-slate-400">ISO를 올릴수록(오른쪽) 화면이 밝아지고, 내릴수록(왼쪽) 화면이 어두워집니다.</p>
+                </div>
+                <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800">
+                    <h4 class="font-bold text-sky-400 mb-1"><i class="fa-solid fa-stopwatch mr-1"></i> 셔터스피드 (속도 조절)</h4>
+                    <p class="text-xs text-slate-400">셔터스피드를 빠르게 할수록(오른쪽) 동작이 멈추고 화면이 어두워집니다. 느리게 할수록(왼쪽) 잔상이 생기고 빛이 많이 들어와 밝아집니다.</p>
+                </div>
+            </div>
+
+            <div class="flex justify-end pt-2">
+                <button onclick="closeHowToPlayModal()" class="px-6 py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold rounded-xl transition">
+                    이해했습니다!
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- PRE-GAME STEP MODAL -->
+    <div id="modal-intro-step" class="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md hidden flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-800 max-w-lg w-full rounded-3xl p-6 shadow-2xl flex flex-col gap-5 text-center">
+            <div id="intro-step-icon" class="w-16 h-16 rounded-2xl bg-amber-500/20 text-amber-400 text-3xl flex items-center justify-center mx-auto border border-amber-500/30">
+                <i class="fa-solid fa-sun"></i>
+            </div>
+            <h3 id="intro-step-title" class="text-2xl font-black text-white">1단계: ISO 개념 파악하기</h3>
+            <p id="intro-step-desc" class="text-slate-300 text-sm leading-relaxed bg-slate-950 p-4 rounded-2xl border border-slate-800 text-left"></p>
+            <button id="intro-step-btn" onclick="nextIntroStep()" class="w-full py-3.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-extrabold text-base rounded-2xl shadow-xl transition">
+                다음 개념 보기
+            </button>
+        </div>
+    </div>
+
+    <script>
+        /* ==================== GAME DATA ==================== */
+        const ISO_VALUES = [100, 200, 400, 800, 1600, 3200, 6400, 12800];
+        
+        const SS_VALUES = [
+            { display: '2초', val: 2 },
+            { display: '1초', val: 1 },
+            { display: '1/4초', val: 0.25 },
+            { display: '1/15초', val: 1/15 },
+            { display: '1/30초', val: 1/30 },
+            { display: '1/60초', val: 1/60 },
+            { display: '1/125초', val: 1/125 },
+            { display: '1/250초', val: 1/250 },
+            { display: '1/500초', val: 1/500 },
+            { display: '1/1000초', val: 1/1000 },
+            { display: '1/2000초', val: 1/2000 },
+            { display: '1/4000초', val: 1/4000 }
+        ];
+
+        // Total 7 Main Rounds
+        const GAME_ROUNDS = [
+            {
+                id: 1,
+                location: "미국 태평양 해안 노을",
+                title: "노을 속 달리는 스포츠카",
+                description: "달리는 차를 선명히 찍으려면 셔터스피드를 1/250초 이상으로 고속 설정하고, ISO를 올리세요!",
+                bgType: "sunset_highway",
+                subjectType: "fast_car",
+                reqType: "fast",
+                reqSSMax: 1/250,
+                targetISOIdx: 3, // Target: ISO 800
+                targetSSIdx: 8,  // Target: 1/500초
+                initISOIdx: 0,   // Initial: ISO 100
+                initSSIdx: 3,    // Initial: 1/15초
+                hint: "🏎️ 스포츠카를 선명하게 잡으려면 셔터스피드를 1/250초 이하(오른쪽: 예 1/500초)로 높이고, ISO를 800(오른쪽)으로 올려 밝기(0 EV)를 맞추세요!"
+            },
+            {
+                id: 2,
+                location: "요세미티 국립공원 폭포",
+                title: "실비단처럼 흐르는 폭포수",
+                description: "폭포수를 비단처럼 부드럽게 만들려면 느린 셔터스피드(1/15초 이하)를 쓰고 ISO를 맞춰보세요!",
+                bgType: "bright_waterfall",
+                subjectType: "waterfall",
+                reqType: "slow",
+                reqSSMin: 1/15,
+                targetISOIdx: 0, // Target: ISO 100
+                targetSSIdx: 3,  // Target: 1/15초
+                initISOIdx: 7,   // Initial: ISO 12800
+                initSSIdx: 10,   // Initial: 1/2000초
+                hint: "🌊 폭포 물결을 비단처럼 연결하려면 셔터스피드를 1/15초~1/4초(왼쪽)로 느리게 내리고 ISO를 100~200(왼쪽)으로 낮추세요!"
+            },
+            {
+                id: 3,
+                location: "그랜드 캐니언 하늘",
+                title: "비상하는 독수리의 순간 정지",
+                description: "날아가는 독수리를 딱 정지시키려면 셔터스피드 1/500초 이상이 필수입니다!",
+                bgType: "clear_canyon",
+                subjectType: "eagle",
+                reqType: "fast",
+                reqSSMax: 1/500,
+                targetISOIdx: 2, // Target: ISO 400
+                targetSSIdx: 9,  // Target: 1/1000초
+                initISOIdx: 0,   // Initial: ISO 100
+                initSSIdx: 2,    // Initial: 1/4초
+                hint: "🦅 독수리를 정지시키려면 셔터스피드를 1/500초 이상(오른쪽)으로 빠르게 맞추고 ISO를 400~800(오른쪽)으로 조정하세요!"
+            },
+            {
+                id: 4,
+                location: "뉴욕 브루클린 브리지 야경",
+                title: "어두운 밤도시와 빛의 궤적",
+                description: "자동차 불빛을 길게 연결하기 위해 1초 이상의 느린 셔터스피드를 사용해 보세요!",
+                bgType: "night_brooklyn",
+                subjectType: "light_trails",
+                reqType: "slow",
+                reqSSMin: 1.0,
+                targetISOIdx: 2, // Target: ISO 400
+                targetSSIdx: 1,  // Target: 1초
+                initISOIdx: 6,   // Initial: ISO 6400
+                initSSIdx: 11,   // Initial: 1/4000초
+                hint: "🌉 빛 궤적을 만들려면 셔터스피드를 1초 또는 2초(왼쪽)로 느리게 두고 ISO를 400 근처(왼쪽)로 맞추면 선명한 적정 노출(0 EV)이 됩니다!"
+            },
+            {
+                id: 5,
+                location: "유타 소금사막 레이싱",
+                title: "햇빛 속 레이싱 오토바이",
+                description: "엄청난 속도의 오토바이를 멈추기 위해 초고속 셔터스피드(1/1000초 이상)를 사용하세요!",
+                bgType: "desert_racing",
+                subjectType: "bike",
+                reqType: "fast",
+                reqSSMax: 1/1000,
+                targetISOIdx: 2, // Target: ISO 400
+                targetSSIdx: 9,  // Target: 1/1000초
+                initISOIdx: 0,   // Initial: ISO 100
+                initSSIdx: 4,    // Initial: 1/30초
+                hint: "🏍️ 오토바이는 1/1000초 이상(오른쪽)으로 빠르게 찍고, ISO는 200~400(오른쪽)을 맞추세요!"
+            },
+            {
+                id: 6,
+                location: "뉴욕 브로드웨이 밤거리",
+                title: "비 내리는 밤거리 노란 택시",
+                description: "어두운 밤 달리는 택시를 멈추려면 1/250초 셔터와 높은 ISO 1600~3200이 조화를 이루어야 합니다!",
+                bgType: "neon_street",
+                subjectType: "taxi",
+                reqType: "fast",
+                reqSSMax: 1/250,
+                targetISOIdx: 4, // Target: ISO 1600
+                targetSSIdx: 7,  // Target: 1/250초
+                initISOIdx: 0,   // Initial: ISO 100
+                initSSIdx: 1,    // Initial: 1초
+                hint: "🚕 어두운 밤 지나가는 택시는 셔터스피드 1/250초 이상(오른쪽) + ISO 1600 이상(오른쪽) 조합이 필요합니다!"
+            },
+            {
+                id: 7,
+                location: "옐로스톤 은하수 밤하늘",
+                title: "신비로운 밤하늘 은하수",
+                description: "캄캄한 밤하늘 별빛을 모으기 위해 2초 셔터스피드와 ISO 3200을 설정하세요!",
+                bgType: "milkyway_night",
+                subjectType: "stars",
+                reqType: "slow",
+                reqSSMin: 1.0,
+                targetISOIdx: 5, // Target: ISO 3200
+                targetSSIdx: 0,  // Target: 2초
+                initISOIdx: 0,   // Initial: ISO 100
+                initSSIdx: 11,   // Initial: 1/4000초
+                hint: "🌌 캄캄한 밤하늘은 셔터스피드 2초(왼쪽)와 ISO 3200~6400(오른쪽)으로 조절해야 별빛이 환하게 드러납니다!"
+            }
+        ];
+
+        /* ==================== STATE VARIABLES ==================== */
+        let currentRoundIndex = 0;
+        let roundsList = GAME_ROUNDS;
+        let lives = 3;
+        let currentIsoIndex = 3;
+        let currentSsIndex = 7;
+        let introStepIndex = 0;
+        let animFrameId = null;
+        let audioCtx = null;
+
+        function playSound(type) {
+            try {
+                if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                const now = audioCtx.currentTime;
+
+                if (type === 'shutter') {
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(150, now);
+                    osc.frequency.exponentialRampToValueAtTime(40, now + 0.08);
+                    gain.gain.setValueAtTime(0.3, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.08);
+                    osc.start(now);
+                    osc.stop(now + 0.08);
+                } else if (type === 'fail') {
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(220, now);
+                    osc.frequency.exponentialRampToValueAtTime(110, now + 0.2);
+                    gain.gain.setValueAtTime(0.2, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+                    osc.start(now);
+                    osc.stop(now + 0.2);
+                } else if (type === 'success') {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(523.25, now);
+                    osc.frequency.setValueAtTime(659.25, now + 0.1);
+                    gain.gain.setValueAtTime(0.2, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+                    osc.start(now);
+                    osc.stop(now + 0.3);
+                }
+            } catch (e) {}
+        }
+
+        function goHome() {
+            document.getElementById('screen-home').classList.remove('hidden');
+            document.getElementById('screen-game').classList.add('hidden');
+            document.getElementById('screen-end').classList.add('hidden');
+            document.getElementById('game-stats-header').classList.add('hidden');
+            if (animFrameId) cancelAnimationFrame(animFrameId);
+        }
+
+        function onClickStartGameButton() {
+            introStepIndex = 0;
+            showIntroStepModal();
+        }
+
+        const INTRO_STEPS_DATA = [
+            {
+                icon: "fa-sun",
+                title: "1. ISO 개념 파악하기",
+                desc: "ISO는 <strong>빛의 감도</strong>입니다.<br><br>• 오른쪽으로 올릴수록 화면이 밝아지고, 왼쪽으로 내릴수록 어두워집니다.<br>• 셔터스피드를 바꿔서 화면이 너무 밝거나 어두워지면, ISO로 적정 밝기(0 EV)를 복구하세요!"
+            },
+            {
+                icon: "fa-stopwatch",
+                title: "2. 셔터스피드 개념 파악하기",
+                desc: "셔터스피드는 <strong>셔터가 열려있는 시간</strong>입니다.<br><br>• 빠른 속도(1/500초~1/2000초): 달리는 차나 새를 멈추어 선명히 찍습니다.<br>• 느린 속도(1/15초~2초): 폭포수 물결이나 밤거리 불빛 궤적을 잇습니다."
+            }
+        ];
+
+        function showIntroStepModal() {
+            const data = INTRO_STEPS_DATA[introStepIndex];
+            document.getElementById('intro-step-icon').innerHTML = `<i class="fa-solid ${data.icon}"></i>`;
+            document.getElementById('intro-step-title').innerText = data.title;
+            document.getElementById('intro-step-desc').innerHTML = data.desc;
+            document.getElementById('intro-step-btn').innerText = (introStepIndex === INTRO_STEPS_DATA.length - 1) ? "게임 시작하기!" : "다음 개념 보기";
+            document.getElementById('modal-intro-step').classList.remove('hidden');
+        }
+
+        function nextIntroStep() {
+            introStepIndex++;
+            if (introStepIndex < INTRO_STEPS_DATA.length) {
+                showIntroStepModal();
+            } else {
+                document.getElementById('modal-intro-step').classList.add('hidden');
+                startActualGame();
+            }
+        }
+
+        function startActualGame() {
+            roundsList = GAME_ROUNDS;
+            currentRoundIndex = 0;
+            lives = 3;
+            updateHeartsUI();
+
+            document.getElementById('screen-home').classList.add('hidden');
+            document.getElementById('screen-game').classList.remove('hidden');
+            document.getElementById('screen-game').classList.add('flex');
+            document.getElementById('screen-end').classList.add('hidden');
+            document.getElementById('game-stats-header').classList.remove('hidden');
+            document.getElementById('game-stats-header').classList.add('flex');
+
+            loadRound(currentRoundIndex);
+        }
+
+        function openHowToPlayModal() {
+            document.getElementById('modal-how-to-play').classList.remove('hidden');
+        }
+        function closeHowToPlayModal() {
+            document.getElementById('modal-how-to-play').classList.add('hidden');
+        }
+
+        function updateHeartsUI() {
+            const container = document.getElementById('hearts-container');
+            container.innerHTML = '';
+            for (let i = 0; i < 3; i++) {
+                if (i < lives) {
+                    container.innerHTML += `<i class="fa-solid fa-heart text-red-500 transition-all duration-300"></i>`;
+                } else {
+                    container.innerHTML += `<i class="fa-solid fa-heart text-slate-700 opacity-30 transition-all duration-300"></i>`;
+                }
+            }
+        }
+
+        /* ==================== TOAST NOTIFICATION ==================== */
+        function showTopRightToast(message, isWarning = true) {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            
+            toast.className = `toast-slide-in p-4 rounded-2xl shadow-2xl border flex items-start gap-3 backdrop-blur-lg pointer-events-auto ${
+                isWarning 
+                    ? 'bg-red-950/95 border-red-500/50 text-red-100' 
+                    : 'bg-emerald-950/95 border-emerald-500/50 text-emerald-100'
+            }`;
+
+            toast.innerHTML = `
+                <div class="p-2 rounded-xl ${isWarning ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400'}">
+                    <i class="fa-solid ${isWarning ? 'fa-triangle-exclamation' : 'fa-circle-check'} text-lg"></i>
+                </div>
+                <div class="flex-1">
+                    <h5 class="font-extrabold text-xs uppercase tracking-wider ${isWarning ? 'text-red-300' : 'text-emerald-300'} mb-0.5">
+                        ${isWarning ? '촬영 실패 (목숨 -1)' : '촬영 성공!'}
+                    </h5>
+                    <p class="text-xs leading-relaxed font-medium">${message}</p>
+                </div>
+            `;
+
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateX(100%)';
+                toast.style.transition = 'all 0.4s ease';
+                setTimeout(() => toast.remove(), 400);
+            }, 4500);
+        }
+
+        /* ==================== EV & REAL-TIME CHECK ==================== */
+        function calculateEV() {
+            const round = roundsList[currentRoundIndex];
+            const iso = ISO_VALUES[currentIsoIndex];
+            const ss = SS_VALUES[currentSsIndex].val;
+
+            const targetISO = ISO_VALUES[round.targetISOIdx !== undefined ? round.targetISOIdx : round.initISOIdx];
+            const targetSS = SS_VALUES[round.targetSSIdx !== undefined ? round.targetSSIdx : round.initSSIdx].val;
+
+            const isoStops = Math.log2(iso / targetISO);
+            const ssStops = Math.log2(ss / targetSS);
+
+            return (isoStops + ssStops);
+        }
+
+        function checkConditions() {
+            const round = roundsList[currentRoundIndex];
+            const currentSS = SS_VALUES[currentSsIndex].val;
+            const ev = calculateEV();
+
+            let isSsPass = false;
+            if (round.reqType === 'fast') {
+                isSsPass = (currentSS <= round.reqSSMax + 0.00001);
+            } else if (round.reqType === 'slow') {
+                isSsPass = (currentSS >= round.reqSSMin - 0.00001);
+            }
+
+            let isEvPass = (Math.abs(ev) <= 1.5);
+
+            return { isSsPass, isEvPass, ev };
+        }
+
+        function updateCameraSettings() {
+            currentIsoIndex = parseInt(document.getElementById('iso-slider').value);
+            currentSsIndex = parseInt(document.getElementById('ss-slider').value);
+
+            const isoVal = ISO_VALUES[currentIsoIndex];
+            const ssObj = SS_VALUES[currentSsIndex];
+
+            document.getElementById('iso-value-display').innerText = `ISO ${isoVal}`;
+            document.getElementById('ss-value-display').innerText = `${ssObj.display}`;
+            document.getElementById('hud-iso').innerText = `${isoVal}`;
+            document.getElementById('hud-ss').innerText = `${ssObj.display}`;
+
+            const { isSsPass, isEvPass, ev } = checkConditions();
+
+            // EV Indicator update
+            const evText = document.getElementById('ev-value-text');
+            const evBar = document.getElementById('ev-indicator-bar');
+
+            let evDisplay = ev.toFixed(1);
+            if (ev > 0) evDisplay = `+${evDisplay}`;
+
+            if (isEvPass) {
+                evText.innerText = `EV: ${evDisplay} (적정 밝기)`;
+                evText.className = "text-xs font-mono font-bold text-emerald-400 mt-1";
+                evBar.className = "h-full bg-emerald-400 transition-all duration-200 rounded-full";
+            } else if (ev < -1.5) {
+                evText.innerText = `EV: ${evDisplay} (어두움 ➔ ISO 올리기)`;
+                evText.className = "text-xs font-mono font-bold text-sky-400 mt-1";
+                evBar.className = "h-full bg-sky-400 transition-all duration-200 rounded-full";
+            } else {
+                evText.innerText = `EV: ${evDisplay} (너무 밝음 ➔ ISO 내리기)`;
+                evText.className = "text-xs font-mono font-bold text-amber-400 mt-1";
+                evBar.className = "h-full bg-amber-400 transition-all duration-200 rounded-full";
+            }
+
+            let clampedEV = Math.max(-3, Math.min(3, ev));
+            let percent = ((clampedEV + 3) / 6) * 100;
+            evBar.style.width = `${Math.min(100, Math.max(10, percent))}%`;
+
+            // Live Real-Time Checklist
+            const ssCheckEl = document.getElementById('check-ss-status');
+            const evCheckEl = document.getElementById('check-ev-status');
+            const liveTipEl = document.getElementById('live-guide-tip');
+
+            if (isSsPass) {
+                ssCheckEl.innerText = "셔터조건: ✅ 만족";
+                ssCheckEl.className = "px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold";
+            } else {
+                ssCheckEl.innerText = "셔터조건: ❌ 미달 (속도 조절 필요)";
+                ssCheckEl.className = "px-2 py-0.5 rounded bg-red-500/20 text-red-400 border border-red-500/30 font-bold";
+            }
+
+            if (isEvPass) {
+                evCheckEl.innerText = "밝기: ✅ 적정 (0 EV)";
+                evCheckEl.className = "px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold";
+            } else if (ev < -1.5) {
+                evCheckEl.innerText = "밝기: ❌ 어두움 (ISO 올리기)";
+                evCheckEl.className = "px-2 py-0.5 rounded bg-sky-500/20 text-sky-400 border border-sky-500/30 font-bold";
+            } else {
+                evCheckEl.innerText = "밝기: ❌ 너무 밝음 (ISO 내리기)";
+                evCheckEl.className = "px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30 font-bold";
+            }
+
+            if (!isSsPass) {
+                liveTipEl.innerHTML = `💡 <strong>조작 힌트:</strong> ${roundsList[currentRoundIndex].hint}`;
+            } else if (!isEvPass) {
+                if (ev < -1.5) {
+                    if (currentIsoIndex < 7) {
+                        liveTipEl.innerHTML = `💡 <strong>밝기 복구 힌트:</strong> 셔터스피드 조건은 맞췄으나 화면이 어둡습니다. <strong>ISO 슬라이더를 오른쪽으로 올려보세요!</strong>`;
+                    } else {
+                        liveTipEl.innerHTML = `💡 <strong>밝기 복구 힌트:</strong> ISO가 최고치인데 어둡습니다. 셔터스피드를 조금 더 느리게(왼쪽) 조정해 빛을 확보하세요!`;
+                    }
+                } else {
+                    if (currentIsoIndex > 0) {
+                        liveTipEl.innerHTML = `💡 <strong>밝기 복구 힌트:</strong> 셔터스피드 조건은 맞췄으나 화면이 너무 하얗습니다. <strong>ISO 슬라이더를 왼쪽으로 낮춰보세요!</strong>`;
+                    } else {
+                        liveTipEl.innerHTML = `💡 <strong>밝기 복구 힌트:</strong> ISO가 최저치인데 너무 밝습니다. 셔터스피드를 조금 더 빠르게(오른쪽) 조정해 빛을 줄이세요!`;
+                    }
+                }
+            } else {
+                liveTipEl.innerHTML = `✨ <strong>완벽한 상태입니다!</strong> 실시간 조건이 모두 만족되었습니다. [사진 촬영하기] 버튼을 누르세요!`;
+            }
+        }
+
+        function takePhoto() {
+            playSound('shutter');
+
+            const flashEl = document.getElementById('shutter-flash');
+            if (flashEl) {
+                flashEl.classList.remove('shutter-flash-active');
+                void flashEl.offsetWidth;
+                flashEl.classList.add('shutter-flash-active');
+            }
+
+            const round = roundsList[currentRoundIndex];
+            const { isSsPass, isEvPass, ev } = checkConditions();
+
+            if (isSsPass && isEvPass) {
+                playSound('success');
+                const modalMsg = document.getElementById('success-modal-msg');
+                if (modalMsg) {
+                    modalMsg.innerHTML = `<strong>촬영 성공!</strong><br>${round.title} 사진을 적정 밝기와 올바른 셔터스피드로 완벽하게 포착했습니다!`;
+                }
+                const modal = document.getElementById('modal-success-result');
+                if (modal) modal.classList.remove('hidden');
+            } else {
+                playSound('fail');
+                lives--;
+                updateHeartsUI();
+
+                let failMsg = "";
+                if (!isSsPass) {
+                    if (round.reqType === 'fast') {
+                        failMsg = `피사체가 번져서 흐립니다! 셔터스피드를 더 빠르게(오른쪽) 조절하세요.`;
+                    } else {
+                        failMsg = `궤적/물결 느낌이 나지 않습니다! 셔터스피드를 더 느리게(왼쪽) 조절하세요.`;
+                    }
+                } else if (!isEvPass) {
+                    if (ev < -1.5) {
+                        failMsg = `사진이 너무 어둡습니다! ISO를 오른쪽으로 올려 적정 밝기(0 EV)로 만드세요.`;
+                    } else {
+                        failMsg = `사진이 너무 하얗게 탔습니다! ISO를 왼쪽으로 낮춰 적정 밝기(0 EV)로 만드세요.`;
+                    }
+                }
+
+                showTopRightToast(failMsg, true);
+
+                if (lives <= 0) {
+                    setTimeout(() => {
+                        showGameOverScreen();
+                    }, 1200);
+                }
+            }
+        }
+
+        function loadRound(index) {
+            const round = roundsList[index];
+
+            document.getElementById('stage-badge').innerText = `미션`;
+            document.getElementById('round-badge').innerText = `ROUND ${index + 1}/${roundsList.length}`;
+            document.getElementById('target-location-tag').innerText = round.location;
+            document.getElementById('target-title').innerText = round.title;
+            document.getElementById('target-description').innerText = round.description;
+
+            currentIsoIndex = round.initISOIdx;
+            currentSsIndex = round.initSSIdx;
+
+            document.getElementById('iso-slider').value = currentIsoIndex;
+            document.getElementById('ss-slider').value = currentSsIndex;
+
+            updateCameraSettings();
+            initCanvasAnimation();
+        }
+
+        /* ==================== HIGH-DETAIL CANVAS VIEWFINDER ENGINE ==================== */
+        let canvas, ctx;
+        let animTick = 0;
+
+        function initCanvasAnimation() {
+            canvas = document.getElementById('viewfinder-canvas');
+            if (!canvas) return;
+            ctx = canvas.getContext('2d');
+
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width || 600;
+            canvas.height = rect.height || 400;
+
+            if (animFrameId) cancelAnimationFrame(animFrameId);
+            renderLoop();
+        }
+
+        function renderLoop() {
+            animTick += 0.03;
+            drawScene(ctx, canvas.width, canvas.height, currentIsoIndex, currentSsIndex, animTick);
+            animFrameId = requestAnimationFrame(renderLoop);
+        }
+
+        function drawScene(targetCtx, w, h, isoIdx, ssIdx, tick) {
+            const round = roundsList[currentRoundIndex];
+            const ev = calculateEV();
+            const ssVal = SS_VALUES[ssIdx].val;
+            const isoVal = ISO_VALUES[isoIdx];
+
+            targetCtx.save();
+            targetCtx.clearRect(0, 0, w, h);
+
+            if (round.bgType === 'sunset_highway') {
+                drawRealisticSunsetSea(targetCtx, w, h, tick, ssVal, round.subjectType);
+            } else if (round.bgType === 'bright_waterfall') {
+                drawRealisticWaterfall(targetCtx, w, h, tick, ssVal);
+            } else if (round.bgType === 'clear_canyon') {
+                drawRealisticGrandCanyon(targetCtx, w, h, tick, ssVal);
+            } else if (round.bgType === 'night_brooklyn') {
+                drawRealisticBrooklynBridge(targetCtx, w, h, tick, ssVal);
+            } else if (round.bgType === 'desert_racing') {
+                drawRealisticSaltDesert(targetCtx, w, h, tick, ssVal);
+            } else if (round.bgType === 'neon_street') {
+                drawRealisticNeonStreet(targetCtx, w, h, tick, ssVal);
+            } else if (round.bgType === 'milkyway_night') {
+                drawRealisticMilkyWay(targetCtx, w, h, tick, ssVal, round.subjectType);
+            }
+
+            applyRealisticCameraFX(targetCtx, w, h, ev, isoVal);
+
+            targetCtx.restore();
+        }
+
+        // 1. SUNSET HIGHWAY & PACIFIC COAST
+        function drawRealisticSunsetSea(ctx, w, h, tick, ssVal, subjectType) {
+            let skyGrad = ctx.createLinearGradient(0, 0, 0, h * 0.65);
+            skyGrad.addColorStop(0, '#0f172a');
+            skyGrad.addColorStop(0.25, '#31103f');
+            skyGrad.addColorStop(0.55, '#881337');
+            skyGrad.addColorStop(0.75, '#c2410c');
+            skyGrad.addColorStop(0.9, '#f97316');
+            skyGrad.addColorStop(1, '#fde047');
+            ctx.fillStyle = skyGrad;
+            ctx.fillRect(0, 0, w, h * 0.65);
+
+            ctx.fillStyle = 'rgba(120, 20, 50, 0.35)';
+            ctx.beginPath();
+            ctx.ellipse(w * 0.25, h * 0.2, w * 0.3, 18, 0, 0, Math.PI * 2);
+            ctx.ellipse(w * 0.7, h * 0.15, w * 0.25, 14, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = 'rgba(251, 146, 60, 0.25)';
+            ctx.beginPath();
+            ctx.ellipse(w * 0.3, h * 0.21, w * 0.2, 10, 0, 0, Math.PI * 2);
+            ctx.ellipse(w * 0.65, h * 0.16, w * 0.18, 8, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            let sunX = w * 0.72;
+            let sunY = h * 0.48;
+            let sunGlow = ctx.createRadialGradient(sunX, sunY, 4, sunX, sunY, 70);
+            sunGlow.addColorStop(0, '#ffffff');
+            sunGlow.addColorStop(0.2, '#fef08a');
+            sunGlow.addColorStop(0.5, 'rgba(249, 115, 22, 0.5)');
+            sunGlow.addColorStop(1, 'transparent');
+            ctx.fillStyle = sunGlow;
+            ctx.beginPath();
+            ctx.arc(sunX, sunY, 70, 0, Math.PI * 2);
+            ctx.fill();
+
+            let waterY = h * 0.55;
+            let seaGrad = ctx.createLinearGradient(0, waterY, 0, h);
+            seaGrad.addColorStop(0, '#9a3412');
+            seaGrad.addColorStop(0.3, '#451a03');
+            seaGrad.addColorStop(0.7, '#1e1b4b');
+            seaGrad.addColorStop(1, '#020617');
+            ctx.fillStyle = seaGrad;
+            ctx.fillRect(0, waterY, w, h - waterY);
+
+            ctx.fillStyle = 'rgba(254, 240, 138, 0.6)';
+            for (let r = 0; r < 24; r++) {
+                let ry = waterY + 4 + r * 5;
+                let rxWidth = 10 + r * 6 + Math.sin(tick * 3 + r) * 8;
+                let rx = sunX - rxWidth / 2 + Math.cos(tick * 2 + r) * 6;
+                ctx.fillRect(rx, ry, rxWidth, 1.8);
+            }
+
+            ctx.fillStyle = '#1c1917';
+            ctx.beginPath();
+            ctx.moveTo(0, waterY + 4);
+            ctx.quadraticCurveTo(w * 0.15, waterY - 30, w * 0.35, waterY + 5);
+            ctx.quadraticCurveTo(w * 0.5, waterY - 15, w * 0.6, waterY + 4);
+            ctx.lineTo(w, waterY + 4);
+            ctx.lineTo(w, waterY + 12);
+            ctx.lineTo(0, waterY + 12);
+            ctx.fill();
+
+            ctx.fillStyle = '#262626';
+            ctx.beginPath();
+            ctx.moveTo(0, h * 0.72);
+            ctx.lineTo(w, h * 0.68);
+            ctx.lineTo(w, h);
+            ctx.lineTo(0, h);
+            ctx.fill();
+
+            ctx.strokeStyle = '#eab308';
+            ctx.lineWidth = 3;
+            ctx.setLineDash([20, 15]);
+            ctx.beginPath();
+            ctx.moveTo(0, h * 0.85);
+            ctx.lineTo(w, h * 0.82);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            ctx.strokeStyle = '#94a3b8';
+            ctx.lineWidth = 2;
+            for (let gx = 10; gx < w; gx += 45) {
+                let gy = h * 0.72 + (gx / w) * (h * 0.68 - h * 0.72);
+                ctx.beginPath();
+                ctx.moveTo(gx, gy);
+                ctx.lineTo(gx, gy - 12);
+                ctx.stroke();
+            }
+            ctx.strokeStyle = '#cbd5e1';
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.moveTo(0, h * 0.72 - 10);
+            ctx.lineTo(w, h * 0.68 - 10);
+            ctx.stroke();
+
+            if (subjectType === 'fast_car') {
+                let isBlur = ssVal > (1 / 250);
+                let carSpeed = 220;
+                let carX = ((tick * carSpeed) % (w + 240)) - 120;
+                let carY = h * 0.78;
+
+                if (isBlur) {
+                    let blurLength = Math.min(180, (ssVal / (1 / 250)) * 30);
+                    let blurGrad = ctx.createLinearGradient(carX - blurLength, 0, carX + 85, 0);
+                    blurGrad.addColorStop(0, 'rgba(239, 68, 68, 0)');
+                    blurGrad.addColorStop(0.6, 'rgba(239, 68, 68, 0.4)');
+                    blurGrad.addColorStop(1, 'rgba(239, 68, 68, 0.9)');
+                    ctx.fillStyle = blurGrad;
+                    ctx.fillRect(carX - blurLength, carY - 24, blurLength + 85, 30);
+                }
+
+                ctx.fillStyle = '#dc2626';
+                ctx.beginPath();
+                ctx.roundRect(carX, carY - 20, 95, 22, 6);
+                ctx.fill();
+
+                ctx.fillStyle = '#1e293b';
+                ctx.beginPath();
+                ctx.moveTo(carX + 25, carY - 20);
+                ctx.lineTo(carX + 40, carY - 34);
+                ctx.lineTo(carX + 70, carY - 34);
+                ctx.lineTo(carX + 82, carY - 20);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.fillStyle = '#ef4444';
+                ctx.shadowColor = '#ef4444'; ctx.shadowBlur = 10;
+                ctx.fillRect(carX - 2, carY - 18, 5, 8);
+
+                ctx.fillStyle = '#fef08a';
+                ctx.shadowColor = '#fef08a'; ctx.shadowBlur = 12;
+                ctx.fillRect(carX + 90, carY - 16, 6, 7);
+                ctx.shadowBlur = 0;
+
+                ctx.fillStyle = '#0f172a';
+                ctx.beginPath();
+                ctx.arc(carX + 20, carY + 4, 10, 0, Math.PI * 2);
+                ctx.arc(carX + 75, carY + 4, 10, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#94a3b8';
+                ctx.beginPath();
+                ctx.arc(carX + 20, carY + 4, 4, 0, Math.PI * 2);
+                ctx.arc(carX + 75, carY + 4, 4, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // 2. YOSEMITE WATERFALL
+        function drawRealisticWaterfall(ctx, w, h, tick, ssVal) {
+            let skyGrad = ctx.createLinearGradient(0, 0, 0, h * 0.4);
+            skyGrad.addColorStop(0, '#0284c7');
+            skyGrad.addColorStop(1, '#bae6fd');
+            ctx.fillStyle = skyGrad;
+            ctx.fillRect(0, 0, w, h * 0.4);
+
+            ctx.fillStyle = '#334155';
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(w * 0.38, 0);
+            ctx.lineTo(w * 0.35, h * 0.72);
+            ctx.lineTo(0, h * 0.75);
+            ctx.fill();
+
+            ctx.fillStyle = '#1e293b';
+            ctx.beginPath();
+            ctx.moveTo(w * 0.62, 0);
+            ctx.lineTo(w, 0);
+            ctx.lineTo(w, h * 0.75);
+            ctx.lineTo(w * 0.65, h * 0.72);
+            ctx.fill();
+
+            ctx.fillStyle = '#064e3b';
+            const pineCoords = [[0.1, 0.2], [0.15, 0.35], [0.22, 0.5], [0.75, 0.25], [0.82, 0.45], [0.88, 0.15]];
+            pineCoords.forEach(([px, py]) => {
+                let tx = px * w, ty = py * h;
+                ctx.beginPath();
+                ctx.moveTo(tx, ty);
+                ctx.lineTo(tx - 12, ty + 28);
+                ctx.lineTo(tx + 12, ty + 28);
+                ctx.fill();
+            });
+
+            let isSlowShutter = (ssVal >= 1 / 15);
+            let fallX = w * 0.37;
+            let fallW = w * 0.26;
+
+            if (isSlowShutter) {
+                let waterGrad = ctx.createLinearGradient(fallX, 0, fallX + fallW, 0);
+                waterGrad.addColorStop(0, 'rgba(186, 230, 253, 0.7)');
+                waterGrad.addColorStop(0.2, 'rgba(255, 255, 255, 0.95)');
+                waterGrad.addColorStop(0.8, 'rgba(255, 255, 255, 0.95)');
+                waterGrad.addColorStop(1, 'rgba(186, 230, 253, 0.7)');
+                ctx.fillStyle = waterGrad;
+                ctx.fillRect(fallX, 0, fallW, h * 0.72);
+
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+                for (let i = 0; i < 8; i++) {
+                    let sx = fallX + 10 + i * (fallW / 8);
+                    ctx.fillRect(sx, 0, 3, h * 0.72);
+                }
+            } else {
+                ctx.fillStyle = '#7dd3fc';
+                ctx.fillRect(fallX, 0, fallW, h * 0.72);
+
+                ctx.fillStyle = '#ffffff';
+                let seed = Math.floor(tick * 30);
+                for (let d = 0; d < 180; d++) {
+                    let dx = fallX + (Math.sin(d * 12.3 + seed) * 0.5 + 0.5) * fallW;
+                    let dy = ((d * 17.5 + seed * 8) % (h * 0.72));
+                    ctx.fillRect(dx, dy, 3, 6);
+                }
+            }
+
+            let mistGrad = ctx.createRadialGradient(w * 0.5, h * 0.7, 10, w * 0.5, h * 0.7, 90);
+            mistGrad.addColorStop(0, 'rgba(255, 255, 255, 0.7)');
+            mistGrad.addColorStop(0.6, 'rgba(224, 242, 254, 0.3)');
+            mistGrad.addColorStop(1, 'transparent');
+            ctx.fillStyle = mistGrad;
+            ctx.beginPath();
+            ctx.arc(w * 0.5, h * 0.7, 90, 0, Math.PI * 2);
+            ctx.fill();
+
+            let poolY = h * 0.72;
+            let poolGrad = ctx.createLinearGradient(0, poolY, 0, h);
+            poolGrad.addColorStop(0, '#0284c7');
+            poolGrad.addColorStop(0.5, '#0369a1');
+            poolGrad.addColorStop(1, '#0c4a6e');
+            ctx.fillStyle = poolGrad;
+            ctx.fillRect(0, poolY, w, h - poolY);
+
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+            ctx.lineWidth = 1.5;
+            for (let r = 1; r <= 3; r++) {
+                let radius = ((tick * 40 + r * 30) % 80);
+                ctx.beginPath();
+                ctx.ellipse(w * 0.5, poolY + 18, radius, radius * 0.3, 0, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+        }
+
+        // 3. GRAND CANYON & EAGLE
+        function drawRealisticGrandCanyon(ctx, w, h, tick, ssVal) {
+            let skyGrad = ctx.createLinearGradient(0, 0, 0, h * 0.5);
+            skyGrad.addColorStop(0, '#0369a1');
+            skyGrad.addColorStop(0.6, '#38bdf8');
+            skyGrad.addColorStop(1, '#ffedd5');
+            ctx.fillStyle = skyGrad;
+            ctx.fillRect(0, 0, w, h * 0.5);
+
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.beginPath();
+            ctx.ellipse(w * 0.2, h * 0.15, w * 0.15, 8, 0, 0, Math.PI * 2);
+            ctx.ellipse(w * 0.75, h * 0.1, w * 0.2, 10, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#9a3412';
+            ctx.beginPath();
+            ctx.moveTo(0, h * 0.45);
+            ctx.lineTo(w * 0.25, h * 0.38);
+            ctx.lineTo(w * 0.5, h * 0.44);
+            ctx.lineTo(w * 0.8, h * 0.36);
+            ctx.lineTo(w, h * 0.42);
+            ctx.lineTo(w, h);
+            ctx.lineTo(0, h);
+            ctx.fill();
+
+            ctx.fillStyle = '#7c2d12';
+            ctx.beginPath();
+            ctx.moveTo(0, h * 0.52);
+            ctx.lineTo(w * 0.35, h * 0.58);
+            ctx.lineTo(w * 0.65, h * 0.48);
+            ctx.lineTo(w, h * 0.55);
+            ctx.lineTo(w, h);
+            ctx.lineTo(0, h);
+            ctx.fill();
+
+            ctx.fillStyle = '#451a03';
+            ctx.beginPath();
+            ctx.moveTo(0, h * 0.7);
+            ctx.lineTo(w * 0.3, h * 0.65);
+            ctx.lineTo(w * 0.4, h);
+            ctx.lineTo(0, h);
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.moveTo(w * 0.7, h);
+            ctx.lineTo(w * 0.8, h * 0.68);
+            ctx.lineTo(w, h * 0.62);
+            ctx.lineTo(w, h);
+            ctx.fill();
+
+            let isBlur = ssVal > (1 / 500);
+            let eagleSpeed = 90;
+            let ex = ((tick * eagleSpeed) % (w + 180)) - 90;
+            let ey = h * 0.28 + Math.sin(tick * 2) * 30;
+
+            if (isBlur) {
+                let blurAmount = Math.min(60, (ssVal / (1 / 500)) * 14);
+                ctx.fillStyle = 'rgba(67, 20, 7, 0.35)';
+                for (let b = 1; b <= 3; b++) {
+                    let bx = ex - b * (blurAmount / 3);
+                    ctx.beginPath();
+                    ctx.arc(bx, ey, 24, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            ctx.fillStyle = '#291305';
+            ctx.beginPath();
+            ctx.moveTo(ex, ey);
+            ctx.quadraticCurveTo(ex - 35, ey - 30 - Math.sin(tick * 8) * 12, ex - 60, ey - 10);
+            ctx.quadraticCurveTo(ex - 30, ey, ex, ey);
+            ctx.moveTo(ex, ey);
+            ctx.quadraticCurveTo(ex + 35, ey - 30 - Math.sin(tick * 8) * 12, ex + 60, ey - 10);
+            ctx.quadraticCurveTo(ex + 30, ey, ex, ey);
+            ctx.fill();
+
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(ex + 12, ey - 2, 6, 0, Math.PI * 2);
+            ctx.arc(ex - 15, ey + 2, 5, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#eab308';
+            ctx.beginPath();
+            ctx.moveTo(ex + 17, ey - 3);
+            ctx.lineTo(ex + 23, ey);
+            ctx.lineTo(ex + 17, ey + 2);
+            ctx.fill();
+        }
+
+        // 4. BROOKLYN BRIDGE NIGHT
+        function drawRealisticBrooklynBridge(ctx, w, h, tick, ssVal) {
+            let skyGrad = ctx.createLinearGradient(0, 0, 0, h * 0.6);
+            skyGrad.addColorStop(0, '#020617');
+            skyGrad.addColorStop(1, '#0f172a');
+            ctx.fillStyle = skyGrad;
+            ctx.fillRect(0, 0, w, h * 0.6);
+
+            ctx.fillStyle = '#0f172a';
+            const bldgWidths = [38, 55, 42, 65, 48, 75, 60, 45];
+            let bx = 10;
+            for (let b = 0; b < bldgWidths.length; b++) {
+                let bw = bldgWidths[b];
+                let bh = 130 + (b * 37) % 120;
+                ctx.fillRect(bx, h * 0.6 - bh, bw, bh);
+
+                ctx.fillStyle = '#fef08a';
+                for (let wx = bx + 6; wx < bx + bw - 8; wx += 10) {
+                    for (let wy = h * 0.6 - bh + 12; wy < h * 0.6 - 15; wy += 14) {
+                        if ((wx * 7 + wy * 13) % 4 !== 0) {
+                            ctx.fillRect(wx, wy, 4, 6);
+                        }
+                    }
+                }
+                ctx.fillStyle = '#0f172a';
+                bx += bw + 12;
+            }
+
+            let waterY = h * 0.6;
+            let riverGrad = ctx.createLinearGradient(0, waterY, 0, h);
+            riverGrad.addColorStop(0, '#030712');
+            riverGrad.addColorStop(1, '#0b0f19');
+            ctx.fillStyle = riverGrad;
+            ctx.fillRect(0, waterY, w, h - waterY);
+
+            ctx.fillStyle = 'rgba(250, 204, 21, 0.22)';
+            for (let r = 0; r < 24; r++) {
+                let rx = (r * 33 + Math.sin(tick * 2 + r) * 12) % w;
+                let ry = waterY + 10 + (r * 12) % (h * 0.35);
+                let rw = 18 + Math.sin(tick * 3 + r) * 12;
+                ctx.fillRect(rx, ry, rw, 2);
+            }
+
+            ctx.fillStyle = '#1e293b';
+            let tX1 = w * 0.3, tX2 = w * 0.7;
+            ctx.fillRect(tX1 - 20, h * 0.18, 40, h * 0.42);
+            ctx.fillRect(tX2 - 20, h * 0.18, 40, h * 0.42);
+
+            ctx.fillStyle = '#020617';
+            ctx.beginPath();
+            ctx.arc(tX1, h * 0.32, 11, Math.PI, 0); ctx.fillRect(tX1 - 11, h * 0.32, 22, 25);
+            ctx.arc(tX2, h * 0.32, 11, Math.PI, 0); ctx.fillRect(tX2 - 11, h * 0.32, 22, 25);
+            ctx.fill();
+
+            ctx.strokeStyle = 'rgba(148, 163, 184, 0.45)';
+            ctx.lineWidth = 1.8;
+            ctx.beginPath();
+            ctx.moveTo(0, h * 0.48);
+            ctx.quadraticCurveTo(tX1, h * 0.2, (tX1 + tX2) / 2, h * 0.42);
+            ctx.quadraticCurveTo(tX2, h * 0.2, w, h * 0.48);
+            ctx.stroke();
+
+            ctx.fillStyle = '#334155';
+            ctx.fillRect(0, h * 0.48, w, 14);
+
+            let isLongExposure = ssVal >= 1.0;
+            let carPos = (tick * 160) % w;
+
+            if (isLongExposure) {
+                ctx.fillStyle = 'rgba(239, 68, 68, 0.95)';
+                ctx.shadowColor = '#ef4444'; ctx.shadowBlur = 14;
+                ctx.fillRect(0, h * 0.49, w, 4);
+
+                ctx.fillStyle = 'rgba(254, 240, 138, 0.98)';
+                ctx.shadowColor = '#fef08a'; ctx.shadowBlur = 14;
+                ctx.fillRect(0, h * 0.52, w, 4);
+                ctx.shadowBlur = 0;
+            } else {
+                for (let c = 0; c < 4; c++) {
+                    let cx = (carPos + c * 160) % w;
+                    ctx.fillStyle = '#ef4444';
+                    ctx.fillRect(cx, h * 0.49, 14, 3);
+
+                    let cx2 = (carPos + c * 160 + 80) % w;
+                    ctx.fillStyle = '#fef08a';
+                    ctx.fillRect(cx2, h * 0.52, 14, 3);
+                }
+            }
+        }
+
+        // 5. UTAH SALT DESERT RACING
+        function drawRealisticSaltDesert(ctx, w, h, tick, ssVal) {
+            let skyGrad = ctx.createLinearGradient(0, 0, 0, h * 0.55);
+            skyGrad.addColorStop(0, '#0284c7');
+            skyGrad.addColorStop(0.7, '#38bdf8');
+            skyGrad.addColorStop(1, '#e0f2fe');
+            ctx.fillStyle = skyGrad;
+            ctx.fillRect(0, 0, w, h * 0.55);
+
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            ctx.beginPath();
+            ctx.arc(w * 0.8, h * 0.2, 35, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#64748b';
+            ctx.beginPath();
+            ctx.moveTo(0, h * 0.55);
+            ctx.lineTo(w * 0.2, h * 0.48);
+            ctx.lineTo(w * 0.45, h * 0.54);
+            ctx.lineTo(w * 0.7, h * 0.46);
+            ctx.lineTo(w, h * 0.53);
+            ctx.lineTo(w, h * 0.55);
+            ctx.fill();
+
+            let groundGrad = ctx.createLinearGradient(0, h * 0.55, 0, h);
+            groundGrad.addColorStop(0, '#f1f5f9');
+            groundGrad.addColorStop(1, '#cbd5e1');
+            ctx.fillStyle = groundGrad;
+            ctx.fillRect(0, h * 0.55, w, h * 0.45);
+
+            ctx.strokeStyle = 'rgba(148, 163, 184, 0.4)';
+            ctx.lineWidth = 1;
+            for (let i = -10; i <= 20; i++) {
+                ctx.beginPath();
+                ctx.moveTo(w * 0.5, h * 0.55);
+                ctx.lineTo(w * 0.5 + i * 40, h);
+                ctx.stroke();
+            }
+
+            let isBlur = ssVal > (1 / 1000);
+            let bikeSpeed = 280;
+            let bx = ((tick * bikeSpeed) % (w + 200)) - 100;
+            let by = h * 0.72;
+
+            if (isBlur) {
+                let blurLen = Math.min(160, (ssVal / (1 / 1000)) * 22);
+                ctx.fillStyle = 'rgba(2, 132, 199, 0.35)';
+                ctx.fillRect(bx - blurLen, by - 26, blurLen + 60, 28);
+            }
+
+            ctx.fillStyle = '#0284c7';
+            ctx.beginPath();
+            ctx.roundRect(bx, by - 16, 65, 16, 4);
+            ctx.fill();
+
+            ctx.fillStyle = '#0f172a';
+            ctx.beginPath();
+            ctx.arc(bx + 35, by - 24, 9, 0, Math.PI * 2);
+            ctx.fillRect(bx + 20, by - 20, 22, 12);
+            ctx.fill();
+
+            ctx.fillStyle = '#1e293b';
+            ctx.beginPath();
+            ctx.arc(bx + 12, by + 2, 11, 0, Math.PI * 2);
+            ctx.arc(bx + 52, by + 2, 11, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+            for (let p = 0; p < 15; p++) {
+                let px = bx - 10 - p * 5 - Math.random() * 10;
+                let py = by + 2 - Math.random() * 12;
+                ctx.beginPath();
+                ctx.arc(px, py, 3 + Math.random() * 4, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // 6. BROADWAY NEON STREET IN RAIN
+        function drawRealisticNeonStreet(ctx, w, h, tick, ssVal) {
+            ctx.fillStyle = '#030712';
+            ctx.fillRect(0, 0, w, h);
+
+            ctx.fillStyle = '#090d16';
+            ctx.fillRect(10, 20, w * 0.28, h * 0.65);
+            ctx.fillRect(w * 0.7, 10, w * 0.28, h * 0.65);
+
+            ctx.fillStyle = 'rgba(236, 72, 153, 0.2)';
+            ctx.fillRect(20, 50, 75, 120);
+            ctx.strokeStyle = '#ec4899'; ctx.lineWidth = 3;
+            ctx.shadowColor = '#ec4899'; ctx.shadowBlur = 12;
+            ctx.strokeRect(20, 50, 75, 120);
+
+            ctx.strokeStyle = '#06b6d4';
+            ctx.shadowColor = '#06b6d4'; ctx.shadowBlur = 12;
+            ctx.strokeRect(w - 95, 40, 80, 100);
+            ctx.shadowBlur = 0;
+
+            let roadY = h * 0.62;
+            ctx.fillStyle = '#0b0f19';
+            ctx.fillRect(0, roadY, w, h - roadY);
+
+            ctx.fillStyle = 'rgba(236, 72, 153, 0.3)';
+            ctx.fillRect(20, roadY, 80, h - roadY);
+
+            ctx.fillStyle = 'rgba(6, 182, 212, 0.3)';
+            ctx.fillRect(w - 100, roadY, 80, h - roadY);
+
+            ctx.fillStyle = 'rgba(234, 179, 8, 0.35)';
+            ctx.fillRect(w * 0.3, roadY, w * 0.4, h - roadY);
+
+            ctx.strokeStyle = 'rgba(148, 163, 184, 0.4)';
+            ctx.lineWidth = 1.2;
+            let rainSeed = Math.floor(tick * 40);
+            for (let r = 0; r < 60; r++) {
+                let rx = (r * 19 + rainSeed * 7) % w;
+                let ry = (r * 31 + rainSeed * 13) % h;
+                ctx.beginPath();
+                ctx.moveTo(rx, ry);
+                ctx.lineTo(rx - 3, ry + 14);
+                ctx.stroke();
+            }
+
+            let isBlur = ssVal > (1 / 250);
+            let taxiSpeed = 190;
+            let tx = ((tick * taxiSpeed) % (w + 220)) - 110;
+            let ty = h * 0.74;
+
+            if (isBlur) {
+                let blurLen = Math.min(140, (ssVal / (1 / 250)) * 25);
+                ctx.fillStyle = 'rgba(234, 179, 8, 0.4)';
+                ctx.fillRect(tx - blurLen, ty - 22, blurLen + 85, 28);
+            }
+
+            ctx.fillStyle = '#eab308';
+            ctx.beginPath();
+            ctx.roundRect(tx, ty - 20, 90, 22, 6);
+            ctx.fill();
+
+            ctx.fillStyle = '#1e293b';
+            ctx.fillRect(tx + 25, ty - 32, 40, 12);
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(tx + 65, ty - 32, 8, 12);
+
+            ctx.fillStyle = '#f97316';
+            ctx.fillRect(tx + 38, ty - 38, 14, 6);
+
+            ctx.fillStyle = '#020617';
+            ctx.beginPath();
+            ctx.arc(tx + 20, ty + 2, 9, 0, Math.PI * 2);
+            ctx.arc(tx + 70, ty + 2, 9, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // 7. YELLOWSTONE MILKY WAY & NIGHT
+        function drawRealisticMilkyWay(ctx, w, h, tick, ssVal, subjectType) {
+            ctx.fillStyle = '#020617';
+            ctx.fillRect(0, 0, w, h);
+
+            for (let s = 0; s < 180; s++) {
+                let sx = (s * 37) % w;
+                let sy = (s * 23) % (h * 0.72);
+                let starAlpha = 0.3 + (Math.sin(tick * 3 + s) * 0.5 + 0.5) * 0.7;
+                ctx.fillStyle = `rgba(255, 255, 255, ${starAlpha})`;
+                let size = (s % 7 === 0) ? 2.5 : 1.2;
+                ctx.fillRect(sx, sy, size, size);
+            }
+
+            let galaxyGrad = ctx.createLinearGradient(w * 0.2, h, w * 0.8, 0);
+            galaxyGrad.addColorStop(0, 'rgba(147, 51, 234, 0.05)');
+            galaxyGrad.addColorStop(0.4, 'rgba(236, 72, 153, 0.25)');
+            galaxyGrad.addColorStop(0.6, 'rgba(59, 130, 246, 0.25)');
+            galaxyGrad.addColorStop(1, 'rgba(16, 185, 129, 0.05)');
+            ctx.fillStyle = galaxyGrad;
+            ctx.beginPath();
+            ctx.moveTo(w * 0.1, h);
+            ctx.lineTo(w * 0.5, 0);
+            ctx.lineTo(w * 0.8, 0);
+            ctx.lineTo(w * 0.4, h);
+            ctx.fill();
+
+            let auroraY = h * 0.25 + Math.sin(tick) * 15;
+            let auroraGrad = ctx.createLinearGradient(0, auroraY - 50, 0, auroraY + 60);
+            auroraGrad.addColorStop(0, 'transparent');
+            auroraGrad.addColorStop(0.5, 'rgba(34, 197, 94, 0.35)');
+            auroraGrad.addColorStop(1, 'transparent');
+            ctx.fillStyle = auroraGrad;
+            ctx.beginPath();
+            ctx.moveTo(0, auroraY);
+            for (let x = 0; x <= w; x += 30) {
+                let y = auroraY + Math.sin(x * 0.01 + tick * 2) * 20;
+                ctx.lineTo(x, y);
+            }
+            ctx.lineTo(w, h * 0.5);
+            ctx.lineTo(0, h * 0.5);
+            ctx.fill();
+
+            ctx.fillStyle = '#090d16';
+            ctx.beginPath();
+            ctx.moveTo(0, h * 0.68);
+            for (let px = 0; px <= w; px += 18) {
+                let py = h * 0.68 - (px % 36 === 0 ? 22 : 8);
+                ctx.lineTo(px, py);
+            }
+            ctx.lineTo(w, h);
+            ctx.lineTo(0, h);
+            ctx.fill();
+
+            let poolGrad = ctx.createLinearGradient(0, h * 0.78, 0, h);
+            poolGrad.addColorStop(0, '#0284c7');
+            poolGrad.addColorStop(1, '#020617');
+            ctx.fillStyle = poolGrad;
+            ctx.fillRect(w * 0.2, h * 0.8, w * 0.6, h * 0.2);
+        }
+
+        // REALISTIC CAMERA EFFECTS OVERLAY
+        function applyRealisticCameraFX(targetCtx, w, h, ev, isoVal) {
+            if (ev < -0.2) {
+                let darkAlpha = Math.min(0.94, Math.abs(ev) * 0.24);
+                targetCtx.fillStyle = `rgba(0, 0, 0, ${darkAlpha})`;
+                targetCtx.fillRect(0, 0, w, h);
+            } else if (ev > 0.2) {
+                let whiteAlpha = Math.min(0.92, ev * 0.22);
+                targetCtx.fillStyle = `rgba(255, 255, 255, ${whiteAlpha})`;
+                targetCtx.fillRect(0, 0, w, h);
+            }
+
+            if (isoVal >= 3200) {
+                let noiseDensity = (isoVal === 3200) ? 500 : ((isoVal === 6400) ? 1200 : 2200);
+                targetCtx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+                for (let i = 0; i < noiseDensity; i++) {
+                    let nx = Math.random() * w;
+                    let ny = Math.random() * h;
+                    targetCtx.fillRect(nx, ny, 1.5, 1.5);
+                }
+            }
+        }
+
+        /* ==================== GAME NAVIGATION & ROUND PROGRESSION ==================== */
+        function advanceNextRound() {
+            document.getElementById('modal-success-result').classList.add('hidden');
+            currentRoundIndex++;
+
+            if (currentRoundIndex >= roundsList.length) {
+                showGameClearScreen();
+            } else {
+                loadRound(currentRoundIndex);
+            }
+        }
+
+        function showGameOverScreen() {
+            document.getElementById('screen-game').classList.add('hidden');
+            document.getElementById('screen-game').classList.remove('flex');
+            document.getElementById('game-stats-header').classList.add('hidden');
+
+            document.getElementById('end-icon-box').innerHTML = `<i class="fa-solid fa-heart-crack text-red-500"></i>`;
+            document.getElementById('end-title').innerText = "게임 오버!";
+            document.getElementById('end-message').innerHTML = "목숨 3개를 모두 소모했습니다.<br>실시간 피드백 힌트를 확인하며 다시 도전해 보세요!";
+
+            document.getElementById('screen-end').classList.remove('hidden');
+            document.getElementById('screen-end').classList.add('flex');
+        }
+
+        function showGameClearScreen() {
+            document.getElementById('screen-game').classList.add('hidden');
+            document.getElementById('screen-game').classList.remove('flex');
+            document.getElementById('game-stats-header').classList.add('hidden');
+
+            document.getElementById('end-icon-box').innerHTML = `<i class="fa-solid fa-trophy text-amber-400"></i>`;
+            document.getElementById('end-title').innerText = "🎉 축하합니다! 카메라 마스터 달성!";
+            document.getElementById('end-message').innerHTML = "총 7개 라운드의 모든 출사 미션을 완벽하게 클리어하셨습니다!";
+
+            document.getElementById('screen-end').classList.remove('hidden');
+            document.getElementById('screen-end').classList.add('flex');
+        }
+
+        window.onload = function() {
+            goHome();
+        };
+
+        window.addEventListener('resize', () => {
+            if (!document.getElementById('screen-game').classList.contains('hidden')) {
+                initCanvasAnimation();
+            }
+        });
+    </script>
+</body>
+</html>
